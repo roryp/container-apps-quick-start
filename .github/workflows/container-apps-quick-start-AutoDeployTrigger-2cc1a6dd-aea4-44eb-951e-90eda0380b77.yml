@@ -1,0 +1,60 @@
+name: Trigger auto deployment for container-apps-quick-start
+
+# When this action will be executed
+on:
+  # Automatically trigger it when detected changes in repo
+  push:
+    branches: 
+      [ main ]
+    paths:
+    - '**'
+    - '.github/workflows/container-apps-quick-start-AutoDeployTrigger-2cc1a6dd-aea4-44eb-951e-90eda0380b77.yml'
+
+  # Allow mannually trigger 
+  workflow_dispatch:      
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout to the branch
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Log in to container registry
+        uses: docker/login-action@v1
+        with:
+          registry: caf87ea204c8acr.azurecr.io
+          username: ${{ secrets.CONTAINERAPPSQUICKSTART_REGISTRY_USERNAME }}
+          password: ${{ secrets.CONTAINERAPPSQUICKSTART_REGISTRY_PASSWORD }}
+
+      - name: Build and push container image to registry
+        uses: docker/build-push-action@v2
+        with:
+          push: true
+          tags: caf87ea204c8acr.azurecr.io/container-apps-quick-start:${{ github.sha }}
+          file: ./Dockerfile
+          context: ./
+
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.CONTAINERAPPSQUICKSTART_AZURE_CREDENTIALS }}
+
+
+      - name: Deploy to containerapp
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            az config set extension.use_dynamic_install=yes_without_prompt
+            az containerapp registry set -n container-apps-quick-start -g container-apps-quick-start --server caf87ea204c8acr.azurecr.io --username  ${{ secrets.CONTAINERAPPSQUICKSTART_REGISTRY_USERNAME }} --password ${{ secrets.CONTAINERAPPSQUICKSTART_REGISTRY_PASSWORD }}
+            az containerapp update -n container-apps-quick-start -g container-apps-quick-start --image caf87ea204c8acr.azurecr.io/container-apps-quick-start:${{ github.sha }}
